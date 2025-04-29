@@ -1,0 +1,118 @@
+# Kubernetes API Server Crash Recovery Guide
+
+In Kubernetes, the API server is the central control plane component. If it crashes, the cluster loses its ability to process requests, although running workloads may continue. This guide helps you understand what happens and how to recover from an API server crash.
+
+---
+
+## 🧨 What Happens When the API Server Crashes?
+
+- **`kubectl` commands fail**:
+  ```
+  The connection to the server localhost:8080 was refused - did you specify the right host or port?
+  ```
+
+- **New deployments or scheduling will fail**.
+- **Existing pods usually continue running**, since they are managed by `kubelet` on the nodes.
+- **Cluster control plane is partially or fully down** depending on the setup.
+
+---
+
+## 🔎 How to Confirm API Server is Down
+
+```bash
+kubectl get componentstatuses
+```
+
+Or check the API server process/container:
+
+```bash
+# systemd
+sudo systemctl status kube-apiserver
+
+# Docker/Containerd
+docker ps -a | grep kube-apiserver
+crictl ps -a | grep kube-apiserver
+```
+
+---
+
+## 🛠️ Recovery Steps
+
+### 1. **Check Logs**
+
+```bash
+# systemd
+journalctl -u kube-apiserver
+
+# Container
+docker logs <apiserver-container-id>
+crictl logs <container-id>
+```
+
+Look for:
+- Certificate errors
+- Port conflicts
+- Memory/cpu limits
+- etcd connectivity issues
+
+---
+
+### 2. **Restart the API Server**
+
+#### For systemd:
+
+```bash
+sudo systemctl restart kube-apiserver
+```
+
+#### For container-managed (static pod):
+
+```bash
+docker restart <container-id>
+crictl restart <container-id>
+```
+
+If managed as a static pod (common in kubeadm setups), modifying `/etc/kubernetes/manifests/kube-apiserver.yaml` will auto-recreate the pod.
+
+---
+
+### 3. **Check etcd**
+
+If etcd is unavailable or misconfigured, the API server won’t start.
+
+```bash
+etcdctl endpoint health
+```
+
+Ensure:
+- Correct certificate paths
+- etcd is running and reachable
+- Endpoints are properly defined
+
+---
+
+## 🧱 Best Practices
+
+- **Use static pods** so kubelet can auto-recover API server.
+- **Monitor** the API server with Prometheus or other tools.
+- **Set up HA (High Availability)** in production environments.
+- Backup etcd regularly.
+
+---
+
+## ✅ Summary
+
+| Problem | Impact | Fix |
+|--------|--------|-----|
+| API server crash | No control-plane commands work | Restart service/container |
+| etcd down | API server won't start | Restore or fix etcd |
+| Bad certs/config | API server won't start | Check flags, file paths, and certs |
+
+---
+
+## 📚 References
+
+- [Kubernetes Documentation - API Server](https://kubernetes.io/docs/concepts/overview/components/#kube-apiserver)
+- [Kubeadm Static Pods](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/control-plane/#control-plane-node-structure)
+
+---
